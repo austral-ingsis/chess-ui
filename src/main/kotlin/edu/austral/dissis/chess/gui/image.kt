@@ -15,9 +15,7 @@ class DefaultImageResolver : ImageResolver {
         return Image(resource, requestedWidth, requestedHeight, true, true)
     }
 
-    private fun resolvePath(imageId: String): String {
-        return "/$imageId.png"
-    }
+    private fun resolvePath(imageId: String): String = "/$imageId.png"
 }
 
 class CachedImageResolver(private val baseResolver: ImageResolver) : ImageResolver {

@@ -6,9 +6,7 @@ interface GameEngine {
     fun applyMove(move: Move): MoveResult
 }
 
-enum class PlayerColor { White, Black }
-
-enum class Side { Right, Left }
+enum class PlayerColor(val displayName: String) { WHITE("White"), BLACK("Black") }
 
 data class BoardSize(val columns: Int, val rows: Int)
 
@@ -16,7 +14,7 @@ data class Position(val row: Int, val column: Int) {
     fun isEven(): Boolean = (column + row) % 2 == 0
 }
 
-data class ChessPiece(val color: PlayerColor, val position: Position, val pieceId: String)
+data class ChessPiece(val id: String, val color: PlayerColor, val position: Position, val pieceId: String)
 
 sealed interface MoveResult
 
@@ -26,10 +24,6 @@ data class NewGameState(val pieces: List<ChessPiece>, val currentPlayer: PlayerC
 
 data class GameOver(val winner: PlayerColor) : MoveResult
 
-sealed interface Move
-
-data class MovePiece(val from: Position, val to: Position) : Move
-
-data class Castling(val side: Side, val player: PlayerColor) : Move
+data class Move(val from: Position, val to: Position)
 
 data class InitialState(val boardSize: BoardSize, val pieces: List<ChessPiece>, val currentPlayer: PlayerColor)
