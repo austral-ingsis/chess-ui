@@ -47,6 +47,13 @@ class SimpleGameEngine : GameEngine {
                 return GameOver(pieces[0].color)
         }
 
+        pieces = pieces.map {
+            if ((it.color == WHITE && it.position.row == 6) || it.color == BLACK && it.position.row == 1)
+                it.copy(pieceId = "queen")
+            else
+                it
+        }
+
         return NewGameState(pieces, currentPlayer)
     }
 

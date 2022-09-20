@@ -2,7 +2,6 @@ package edu.austral.dissis.chess.gui
 
 import javafx.application.Application
 import javafx.scene.Scene
-import javafx.scene.layout.Pane
 import javafx.stage.Stage
 
 abstract class AbstractChessGameApplication : Application() {
@@ -16,9 +15,8 @@ abstract class AbstractChessGameApplication : Application() {
     override fun start(primaryStage: Stage) {
         primaryStage.title = GameTitle
 
-        val boardPane = Pane()
-        boardPane.children.add(ChessGameUI(gameEngine, imageResolver).render())
-        primaryStage.scene = Scene(boardPane)
+        val root = GameView(gameEngine, imageResolver)
+        primaryStage.scene = Scene(root)
 
         primaryStage.show()
     }
