@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     application
     `java-library`
@@ -9,7 +11,7 @@ plugins {
 }
 
 group = "edu.austral.dissis.chess"
-version = "1.0.0-SNAPSHOT"
+version = "1.0.0"
 
 repositories {
     mavenCentral()
@@ -37,9 +39,23 @@ java {
 }
 
 publishing {
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = URI.create("https://maven.pkg.github.com/austral-ingsis/chess-ui")
+            credentials {
+                username = System.getenv("GITHUB_USER")
+                password = System.getenv("GITHUB_TOKEN")
+            }
+        }
+    }
+
     publications {
         create<MavenPublication>("maven") {
             from(components["java"])
         }
     }
+}
+dependencies {
+    implementation(kotlin("script-runtime"))
 }
