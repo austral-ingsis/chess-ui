@@ -15,7 +15,7 @@ abstract class AbstractChessGameApplication : Application() {
     override fun start(primaryStage: Stage) {
         primaryStage.title = GameTitle
 
-        val root = GameView(gameEngine, imageResolver)
+        val root = createGameViewFrom(gameEngine, imageResolver)
         primaryStage.scene = Scene(root)
 
         primaryStage.show()

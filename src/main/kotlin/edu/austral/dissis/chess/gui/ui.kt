@@ -31,7 +31,6 @@ import javafx.scene.text.Font.font
 import javafx.scene.text.Text
 import javafx.util.Duration
 
-
 fun interface PieceMovedListener {
     fun onMovePiece(from: Position, to: Position)
 }
@@ -104,10 +103,10 @@ class PieceView(
         val transition = TranslateTransition(ANIMATION_TIME, this)
         transition.toXProperty().bind(createDoubleBinding({ toX(position.value) }, position))
         transition.toYProperty().bind(createDoubleBinding({ toY(position.value) }, position))
-        transition.onFinishedProperty().bind(createObjectBinding({ EventHandler { imageView.image = image.value } }, image))
+        transition.onFinishedProperty()
+            .bind(createObjectBinding({ EventHandler { imageView.image = image.value } }, image))
         return transition
     }
-
 
     private fun getImage(piece: ChessPiece): Image {
         val imageId = "${piece.pieceId}_${piece.color.name.lowercase()}"
@@ -130,16 +129,18 @@ class PiecesRenderer(
         val pieceNodeMap = pieces.mapValues { renderPiece(it.value) }.toMutableMap()
         pieceNodeMap.values.forEach { nodes.add(it) }
 
-        pieces.addListener(MapChangeListener { change ->
-            if (change.valueAdded != null && change.valueRemoved != null)
-                pieceNodeMap[change.key]?.piece?.set(change.valueAdded)
-            else if (change.valueAdded != null)
-                pieceNodeMap[change.key] = renderPiece(change.valueAdded)
-            else {
-                pieceNodeMap[change.key]?.let { deleteNode(nodes, it) }
-                pieceNodeMap.remove(change.key)
-            }
-        })
+        pieces.addListener(
+            MapChangeListener { change ->
+                if (change.valueAdded != null && change.valueRemoved != null) {
+                    pieceNodeMap[change.key]?.piece?.set(change.valueAdded)
+                } else if (change.valueAdded != null) {
+                    pieceNodeMap[change.key] = renderPiece(change.valueAdded)
+                } else {
+                    pieceNodeMap[change.key]?.let { deleteNode(nodes, it) }
+                    pieceNodeMap.remove(change.key)
+                }
+            },
+        )
 
         return nodes
     }
@@ -165,7 +166,7 @@ class BoardView(
     private val boardSize: BoardSize,
     private val imageResolver: ImageResolver,
     private val pieceMovedListener: PieceMovedListener,
-    private val pieces: ObservableMap<String, ChessPiece>
+    private val pieces: ObservableMap<String, ChessPiece>,
 ) : Pane() {
     private val selectedPosition = SimpleObjectProperty<Position>()
 
@@ -173,8 +174,9 @@ class BoardView(
         if (selectedPosition.value != null) {
             pieceMovedListener.onMovePiece(selectedPosition.value!!, position)
             selectedPosition.set(null)
-        } else
+        } else {
             selectedPosition.set(position)
+        }
     }
 
     init {
@@ -210,7 +212,7 @@ class MessageView(text: Text) : HBox() {
     }
 }
 
-class GameView(private val gameEngine: GameEngine, imageResolver: ImageResolver) : BorderPane() {
+class GameView(initialState: InitialState, imageResolver: ImageResolver) : BorderPane(), GameStateListener {
     // Properties
     private val boardSize: BoardSize
     private val pieces = observableHashMap<String, ChessPiece>()
@@ -218,11 +220,12 @@ class GameView(private val gameEngine: GameEngine, imageResolver: ImageResolver)
     private val errorMessage = SimpleStringProperty()
     private val winner = SimpleObjectProperty<PlayerColor>()
 
+    private val listeners = mutableListOf<GameEventListener>()
+
     init {
         // Styles
         padding = Insets(20.0, 20.0, 20.0, 20.0)
 
-        val initialState = gameEngine.init()
         boardSize = initialState.boardSize
         currentPlayer = SimpleObjectProperty(initialState.currentPlayer)
         setPieces(initialState.pieces)
@@ -245,11 +248,7 @@ class GameView(private val gameEngine: GameEngine, imageResolver: ImageResolver)
     private fun handleGameOver(winner: PlayerColor) = this.winner.set(winner)
 
     private fun handleMove(from: Position, to: Position) {
-        when (val result = gameEngine.applyMove(Move(from, to))) {
-            is NewGameState -> handleNewState(result.pieces, result.currentPlayer)
-            is InvalidMove -> handleInvalidMove(result.reason)
-            is GameOver -> handleGameOver(result.winner)
-        }
+        listeners.forEach { it.handleMove(Move(from, to)) }
     }
 
     private fun renderPlayerText(): Node {
@@ -259,7 +258,6 @@ class GameView(private val gameEngine: GameEngine, imageResolver: ImageResolver)
 
         return renderHBoxWithText(text)
     }
-
 
     private fun renderWinner(): Node {
         val text = Text()
@@ -294,4 +292,14 @@ class GameView(private val gameEngine: GameEngine, imageResolver: ImageResolver)
             this.pieces.remove(it.key)
         }
     }
+
+    override fun handleMoveResult(result: MoveResult) {
+        when (result) {
+            is NewGameState -> handleNewState(result.pieces, result.currentPlayer)
+            is InvalidMove -> handleInvalidMove(result.reason)
+            is GameOver -> handleGameOver(result.winner)
+        }
+    }
+
+    fun addListener(listener: GameEventListener) = listeners.add(listener)
 }
