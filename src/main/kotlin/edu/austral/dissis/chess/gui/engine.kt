@@ -1,5 +1,7 @@
 package edu.austral.dissis.chess.gui
 
+import java.beans.Transient
+
 interface GameEngine {
     fun init(): InitialState
 
@@ -11,6 +13,7 @@ enum class PlayerColor(val displayName: String) { WHITE("White"), BLACK("Black")
 data class BoardSize(val columns: Int, val rows: Int)
 
 data class Position(val row: Int, val column: Int) {
+    @Transient
     fun isEven(): Boolean = (column + row) % 2 == 0
 }
 

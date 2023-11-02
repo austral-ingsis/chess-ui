@@ -3,7 +3,9 @@ package edu.austral.dissis.chess.gui
 import edu.austral.dissis.chess.gui.PieceView.Companion.ANIMATION_TIME
 import edu.austral.dissis.chess.gui.util.bindListTo
 import edu.austral.dissis.chess.gui.util.map
-import javafx.animation.*
+import javafx.animation.RotateTransition
+import javafx.animation.Transition
+import javafx.animation.TranslateTransition
 import javafx.beans.binding.Bindings.*
 import javafx.beans.property.ObjectProperty
 import javafx.beans.property.ReadOnlyObjectProperty
@@ -212,29 +214,45 @@ class MessageView(text: Text) : HBox() {
     }
 }
 
-class GameView(initialState: InitialState, imageResolver: ImageResolver) : BorderPane(), GameStateListener {
+class GameView(
+    private val imageResolver: ImageResolver,
+) : BorderPane(), GameStateListener {
+
     // Properties
-    private val boardSize: BoardSize
+    private val boardSize = SimpleObjectProperty<BoardSize>()
     private val pieces = observableHashMap<String, ChessPiece>()
-    private val currentPlayer: ObjectProperty<PlayerColor>
+    private val currentPlayer = SimpleObjectProperty<PlayerColor>()
     private val errorMessage = SimpleStringProperty()
     private val winner = SimpleObjectProperty<PlayerColor>()
 
-    private val listeners = mutableListOf<GameEventListener>()
+    private val gameEventListeners = mutableListOf<GameEventListener>()
 
     init {
         // Styles
         padding = Insets(20.0, 20.0, 20.0, 20.0)
 
-        boardSize = initialState.boardSize
-        currentPlayer = SimpleObjectProperty(initialState.currentPlayer)
-        setPieces(initialState.pieces)
-
         top = renderPlayerText()
-        center = BoardView(boardSize, imageResolver, { from, to -> handleMove(from, to) }, pieces)
+        center = renderLoading()
         bottom = renderLastMoveMessage()
 
-        winner.addListener { _, _, newValue -> if (newValue != null) center = renderWinner() }
+        boardSize.addListener { _, _, newValue -> newValue?.let { center = renderBoard() } }
+        winner.addListener { _, _, newValue -> newValue?.let { center = renderWinner() } }
+    }
+
+    fun addListener(eventListener: GameEventListener) = gameEventListeners.add(eventListener)
+
+    override fun handleInitialState(state: InitialState) {
+        setPieces(state.pieces)
+        boardSize.set(state.boardSize)
+        currentPlayer.set(state.currentPlayer)
+    }
+
+    override fun handleMoveResult(result: MoveResult) {
+        when (result) {
+            is NewGameState -> handleNewState(result.pieces, result.currentPlayer)
+            is InvalidMove -> handleInvalidMove(result.reason)
+            is GameOver -> handleGameOver(result.winner)
+        }
     }
 
     private fun handleNewState(pieces: List<ChessPiece>, currentPlayer: PlayerColor) {
@@ -248,13 +266,13 @@ class GameView(initialState: InitialState, imageResolver: ImageResolver) : Borde
     private fun handleGameOver(winner: PlayerColor) = this.winner.set(winner)
 
     private fun handleMove(from: Position, to: Position) {
-        listeners.forEach { it.handleMove(Move(from, to)) }
+        gameEventListeners.forEach { it.handleMove(Move(from, to)) }
     }
 
     private fun renderPlayerText(): Node {
         val text = Text()
         text.textProperty()
-            .bind(createStringBinding({ "Current player: ${currentPlayer.value.displayName}" }, currentPlayer))
+            .bind(createStringBinding({ currentPlayer.value?.run { "Current player: $displayName" } }, currentPlayer))
 
         return renderHBoxWithText(text)
     }
@@ -280,6 +298,17 @@ class GameView(initialState: InitialState, imageResolver: ImageResolver) : Borde
         return textView
     }
 
+    private fun renderLoading(): Node {
+        val text = Text("Initializing...")
+        text.font = font(40.0)
+
+        return renderHBoxWithText(text)
+    }
+
+    private fun renderBoard(): Node {
+        return BoardView(boardSize.value, imageResolver, { from, to -> handleMove(from, to) }, pieces)
+    }
+
     private fun setPieces(pieces: List<ChessPiece>) {
         val newPieces = pieces.filter { !this.pieces.contains(it.id) }
         this.pieces.putAll(newPieces.associateBy { it.id })
@@ -292,14 +321,4 @@ class GameView(initialState: InitialState, imageResolver: ImageResolver) : Borde
             this.pieces.remove(it.key)
         }
     }
-
-    override fun handleMoveResult(result: MoveResult) {
-        when (result) {
-            is NewGameState -> handleNewState(result.pieces, result.currentPlayer)
-            is InvalidMove -> handleInvalidMove(result.reason)
-            is GameOver -> handleGameOver(result.winner)
-        }
-    }
-
-    fun addListener(listener: GameEventListener) = listeners.add(listener)
 }

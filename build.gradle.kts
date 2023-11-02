@@ -7,11 +7,10 @@ plugins {
 
     kotlin("jvm") version "1.7.10"
     id("org.openjfx.javafxplugin").version("0.0.13")
-
 }
 
 group = "edu.austral.dissis.chess"
-version = "1.0.1"
+version = "2.0.0"
 
 repositories {
     mavenCentral()
@@ -28,8 +27,12 @@ javafx {
 
 tasks.jar {
     manifest {
-        attributes(mapOf("Implementation-Title" to project.name,
-            "Implementation-Version" to project.version))
+        attributes(
+            mapOf(
+                "Implementation-Title" to project.name,
+                "Implementation-Version" to project.version,
+            ),
+        )
     }
 }
 

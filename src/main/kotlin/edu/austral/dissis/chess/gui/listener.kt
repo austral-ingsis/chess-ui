@@ -5,5 +5,7 @@ interface GameEventListener {
 }
 
 interface GameStateListener {
+    fun handleInitialState(state: InitialState)
+
     fun handleMoveResult(result: MoveResult)
 }
