@@ -4,6 +4,10 @@ interface GameEngine {
     fun init(): InitialState
 
     fun applyMove(move: Move): MoveResult
+
+    fun undo(): NewGameState
+
+    fun redo(): NewGameState
 }
 
 enum class PlayerColor(val displayName: String) { WHITE("White"), BLACK("Black") }
@@ -20,10 +24,16 @@ sealed interface MoveResult
 
 data class InvalidMove(val reason: String) : MoveResult
 
-data class NewGameState(val pieces: List<ChessPiece>, val currentPlayer: PlayerColor) : MoveResult
+data class NewGameState(
+    val pieces: List<ChessPiece>,
+    val currentPlayer: PlayerColor,
+    val undoState: UndoState = UndoState()
+) : MoveResult
 
 data class GameOver(val winner: PlayerColor) : MoveResult
 
 data class Move(val from: Position, val to: Position)
 
 data class InitialState(val boardSize: BoardSize, val pieces: List<ChessPiece>, val currentPlayer: PlayerColor)
+
+data class UndoState(val canUndo: Boolean = false, val canRedo: Boolean = false)
