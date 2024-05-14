@@ -7,8 +7,10 @@ import javafx.animation.RotateTransition
 import javafx.animation.Transition
 import javafx.animation.TranslateTransition
 import javafx.beans.binding.Bindings.*
+import javafx.beans.property.BooleanProperty
 import javafx.beans.property.ObjectProperty
 import javafx.beans.property.ReadOnlyObjectProperty
+import javafx.beans.property.SimpleBooleanProperty
 import javafx.beans.property.SimpleObjectProperty
 import javafx.beans.property.SimpleStringProperty
 import javafx.collections.FXCollections.observableArrayList
@@ -20,11 +22,10 @@ import javafx.event.EventHandler
 import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.Node
+import javafx.scene.control.Button
 import javafx.scene.image.Image
 import javafx.scene.image.ImageView
-import javafx.scene.layout.BorderPane
-import javafx.scene.layout.HBox
-import javafx.scene.layout.Pane
+import javafx.scene.layout.*
 import javafx.scene.paint.Color
 import javafx.scene.paint.Color.BLACK
 import javafx.scene.paint.Color.DARKGRAY
@@ -34,7 +35,10 @@ import javafx.scene.text.Text
 import javafx.util.Duration
 
 fun interface PieceMovedListener {
-    fun onMovePiece(from: Position, to: Position)
+    fun onMovePiece(
+        from: Position,
+        to: Position,
+    )
 }
 
 fun interface PositionClickedHandler {
@@ -75,6 +79,7 @@ class PieceView(
     private val imageResolver: ImageResolver,
     val piece: ObjectProperty<ChessPiece>,
     private val clickedHandler: PositionClickedHandler,
+    private val pieceIsBeingMoved: BooleanProperty
 ) : Pane() {
     companion object {
         val ANIMATION_TIME: Duration = Duration.millis(500.0)
@@ -98,7 +103,10 @@ class PieceView(
         translateX = toX(position.value)
         translateY = toY(position.value)
 
-        position.addListener { _, _, _ -> positionTransition.play() }
+        position.addListener { _, _, _ ->
+            pieceIsBeingMoved.value = true
+            positionTransition.play()
+        }
     }
 
     private fun createPositionTransition(): Transition {
@@ -106,7 +114,12 @@ class PieceView(
         transition.toXProperty().bind(createDoubleBinding({ toX(position.value) }, position))
         transition.toYProperty().bind(createDoubleBinding({ toY(position.value) }, position))
         transition.onFinishedProperty()
-            .bind(createObjectBinding({ EventHandler { imageView.image = image.value } }, image))
+            .bind(createObjectBinding({
+                EventHandler {
+                    imageView.image = image.value
+                    pieceIsBeingMoved.value = false
+                }
+            }, image))
         return transition
     }
 
@@ -116,6 +129,7 @@ class PieceView(
     }
 
     private fun toX(position: Position) = SquareView.SIZE * (position.column - 1)
+
     private fun toY(position: Position) = SquareView.SIZE * (position.row - 1)
 }
 
@@ -123,8 +137,9 @@ class PiecesRenderer(
     private val imageResolver: ImageResolver,
     private val pieces: ObservableMap<String, ChessPiece>,
     private val positionClickedHandler: PositionClickedHandler,
+    private val pieceIsBeingRemoved: BooleanProperty,
+    private val pieceIsBeingMoved: BooleanProperty
 ) {
-
     fun render(): ObservableList<Node> {
         val nodes = observableArrayList<Node>()
 
@@ -137,8 +152,9 @@ class PiecesRenderer(
                     pieceNodeMap[change.key]?.piece?.set(change.valueAdded)
                 } else if (change.valueAdded != null) {
                     pieceNodeMap[change.key] = renderPiece(change.valueAdded)
+                    nodes.add(pieceNodeMap[change.key])
                 } else {
-                    pieceNodeMap[change.key]?.let { deleteNode(nodes, it) }
+                    pieceNodeMap[change.key]?.let { deleteNode(nodes, it, pieceNodeMap, change.key) }
                     pieceNodeMap.remove(change.key)
                 }
             },
@@ -148,9 +164,16 @@ class PiecesRenderer(
     }
 
     private fun renderPiece(piece: ChessPiece): PieceView =
-        PieceView(imageResolver, SimpleObjectProperty(piece), positionClickedHandler)
+        PieceView(imageResolver, SimpleObjectProperty(piece), positionClickedHandler, pieceIsBeingMoved)
 
-    private fun deleteNode(nodes: ObservableList<Node>, node: Node) {
+    private fun deleteNode(
+        nodes: ObservableList<Node>,
+        node: Node,
+        pieceNodeMap: Map<String, PieceView>,
+        pieceId: String,
+    ) {
+        pieceIsBeingRemoved.value = true
+
         val transition = RotateTransition(ANIMATION_TIME, node)
         transition.fromAngle = -10.0
         transition.toAngle = 10.0
@@ -159,8 +182,12 @@ class PiecesRenderer(
         transition.cycleCount = 3
 
         transition.play()
-
-        transition.onFinished = EventHandler { nodes.remove(node) }
+        transition.onFinished = EventHandler {
+            if (!pieceNodeMap.containsKey(pieceId)) {
+                nodes.remove(node)
+            }
+            pieceIsBeingRemoved.value = false
+        }
     }
 }
 
@@ -169,6 +196,8 @@ class BoardView(
     private val imageResolver: ImageResolver,
     private val pieceMovedListener: PieceMovedListener,
     private val pieces: ObservableMap<String, ChessPiece>,
+    private val pieceIsBeingRemoved: BooleanProperty,
+    private val pieceIsBeingMoved: BooleanProperty
 ) : Pane() {
     private val selectedPosition = SimpleObjectProperty<Position>()
 
@@ -203,7 +232,7 @@ class BoardView(
     }
 
     private fun renderPieces(): ObservableList<Node> =
-        PiecesRenderer(imageResolver, pieces, positionClickedHandler).render()
+        PiecesRenderer(imageResolver, pieces, positionClickedHandler, pieceIsBeingRemoved, pieceIsBeingMoved).render()
 }
 
 class MessageView(text: Text) : HBox() {
@@ -225,13 +254,20 @@ class GameView(
     private val errorMessage = SimpleStringProperty()
     private val winner = SimpleObjectProperty<PlayerColor>()
 
+    private val canUndo = SimpleBooleanProperty(false)
+    private val canRedo = SimpleBooleanProperty(false)
+
+    // Hacks to prevent inconsistencies (prevents events when animations are running)
+    private val pieceIsBeingRemoved: BooleanProperty = SimpleBooleanProperty(false)
+    private val pieceIsBeingMoved: BooleanProperty = SimpleBooleanProperty(false)
+
     private val gameEventListeners = mutableListOf<GameEventListener>()
 
     init {
         // Styles
         padding = Insets(20.0, 20.0, 20.0, 20.0)
 
-        top = renderPlayerText()
+        top = renderTopPane()
         center = renderLoading()
         bottom = renderLastMoveMessage()
 
@@ -249,14 +285,19 @@ class GameView(
 
     override fun handleMoveResult(result: MoveResult) {
         when (result) {
-            is NewGameState -> handleNewState(result.pieces, result.currentPlayer)
+            is NewGameState -> handleNewState(result.pieces, result.currentPlayer, result.undoState)
             is InvalidMove -> handleInvalidMove(result.reason)
             is GameOver -> handleGameOver(result.winner)
         }
     }
 
-    private fun handleNewState(pieces: List<ChessPiece>, currentPlayer: PlayerColor) {
+    private fun handleNewState(
+        pieces: List<ChessPiece>,
+        currentPlayer: PlayerColor,
+        undoState: UndoState
+    ) {
         setPieces(pieces)
+        setUndoState(undoState)
         this.currentPlayer.set(currentPlayer)
         errorMessage.set(null)
     }
@@ -269,12 +310,20 @@ class GameView(
         gameEventListeners.forEach { it.handleMove(Move(from, to)) }
     }
 
+    private fun handleUndo() {
+        gameEventListeners.forEach { it.handleUndo() }
+    }
+
+    private fun handleRedo() {
+        gameEventListeners.forEach { it.handleRedo() }
+    }
+
     private fun renderPlayerText(): Node {
         val text = Text()
         text.textProperty()
             .bind(createStringBinding({ currentPlayer.value?.run { "Current player: $displayName" } }, currentPlayer))
 
-        return renderHBoxWithText(text)
+        return text
     }
 
     private fun renderWinner(): Node {
@@ -306,19 +355,62 @@ class GameView(
     }
 
     private fun renderBoard(): Node {
-        return BoardView(boardSize.value, imageResolver, { from, to -> handleMove(from, to) }, pieces)
+        return BoardView(
+            boardSize.value,
+            imageResolver,
+            { from, to -> handleMove(from, to) },
+            pieces,
+            pieceIsBeingRemoved,
+            pieceIsBeingMoved
+        )
+
+    }
+
+    private fun renderUndoButton(): Node {
+        val undoButton = Button("Undo")
+        undoButton.disableProperty().bind(pieceIsBeingRemoved.or(pieceIsBeingMoved).or(canUndo.not()))
+        undoButton.onMouseClicked = EventHandler { handleUndo() }
+
+        return undoButton
+    }
+
+    private fun renderRedoButton(): Node {
+        val redoButton = Button("Redo")
+        redoButton.disableProperty().bind(pieceIsBeingRemoved.or(pieceIsBeingMoved).or(canRedo.not()))
+        redoButton.onMouseClicked = EventHandler { handleRedo() }
+
+        return redoButton
+    }
+
+    private fun renderTopPane(): Node {
+        val undoButton = renderUndoButton()
+        val redoButton = renderRedoButton()
+        val playerText = renderPlayerText()
+
+        val topPane = BorderPane()
+        topPane.left = HBox(undoButton, redoButton)
+        topPane.center = playerText
+
+        topPane.prefWidthProperty().bind(this.prefWidthProperty())
+        topPane.padding = Insets(10.0, 10.0, 10.0, 10.0)
+
+        return topPane
     }
 
     private fun setPieces(pieces: List<ChessPiece>) {
         val newPieces = pieces.filter { !this.pieces.contains(it.id) }
-        this.pieces.putAll(newPieces.associateBy { it.id })
-
         val updatedPieces = pieces.filter { this.pieces.contains(it.id) && this.pieces[it.id] != it }
-        this.pieces.putAll(updatedPieces.associateBy { it.id })
+
+        this.pieces.putAll((newPieces + updatedPieces).associateBy { it.id })
 
         val removedPieces = this.pieces.filter { pieces.find { entry -> entry.id == it.key } == null }
         removedPieces.forEach {
             this.pieces.remove(it.key)
         }
+    }
+
+    private fun setUndoState(undoState: UndoState) {
+        canUndo.set(undoState.canUndo)
+        canRedo.set(undoState.canRedo)
     }
 }

@@ -8,6 +8,16 @@ fun createGameViewFrom(gameEngine: GameEngine, imageResolver: ImageResolver): Ga
             val result = gameEngine.applyMove(move)
             gameView.handleMoveResult(result)
         }
+
+        override fun handleUndo() {
+            val result = gameEngine.undo()
+            gameView.handleMoveResult(result)
+        }
+
+        override fun handleRedo() {
+            val result = gameEngine.redo()
+            gameView.handleMoveResult(result)
+        }
     }
 
     gameView.addListener(simpleEventListener)

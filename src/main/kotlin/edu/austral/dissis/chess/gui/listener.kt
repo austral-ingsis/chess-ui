@@ -2,6 +2,10 @@ package edu.austral.dissis.chess.gui
 
 interface GameEventListener {
     fun handleMove(move: Move)
+
+    fun handleUndo()
+
+    fun handleRedo()
 }
 
 interface GameStateListener {
