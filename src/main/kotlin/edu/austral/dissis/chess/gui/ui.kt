@@ -2,7 +2,6 @@ package edu.austral.dissis.chess.gui
 
 import edu.austral.dissis.chess.gui.PieceView.Companion.ANIMATION_TIME
 import edu.austral.dissis.chess.gui.util.bindListTo
-import edu.austral.dissis.chess.gui.util.map
 import javafx.animation.RotateTransition
 import javafx.animation.Transition
 import javafx.animation.TranslateTransition
@@ -13,6 +12,7 @@ import javafx.beans.property.ReadOnlyObjectProperty
 import javafx.beans.property.SimpleBooleanProperty
 import javafx.beans.property.SimpleObjectProperty
 import javafx.beans.property.SimpleStringProperty
+import javafx.beans.value.ObservableValue
 import javafx.collections.FXCollections.observableArrayList
 import javafx.collections.FXCollections.observableHashMap
 import javafx.collections.MapChangeListener
@@ -69,9 +69,9 @@ class SquareView(
         onMouseClicked = EventHandler { positionClickedHandler.onClick(position) }
     }
 
-    private fun createBackgroundProperty(): ObjectProperty<Color> {
+    private fun createBackgroundProperty(): ObservableValue<Color> {
         val defaultColor = if (position.isEven()) Color.GREY else Color.WHITE
-        return selectedPosition.map { if (it == position) DARKGRAY else defaultColor }
+        return selectedPosition.map { if (it == position) DARKGRAY else defaultColor }.orElse(defaultColor)
     }
 }
 

@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "edu.austral.dissis.chess"
-version = "2.1.0"
+version = "3.0.1"
 
 repositories {
     mavenCentral()
@@ -21,7 +21,7 @@ application {
 }
 
 javafx {
-    version = "18"
+    version = "21"
     modules = listOf("javafx.graphics", "javafx.controls")
 }
 
