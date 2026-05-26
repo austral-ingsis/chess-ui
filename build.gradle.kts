@@ -5,8 +5,8 @@ plugins {
     `java-library`
     `maven-publish`
 
-    kotlin("jvm") version "1.7.10"
-    id("org.openjfx.javafxplugin").version("0.0.13")
+    kotlin("jvm") version "2.3.21"
+    id("org.openjfx.javafxplugin").version("0.1.0")
 }
 
 group = "edu.austral.dissis.chess"
@@ -34,6 +34,10 @@ tasks.jar {
             ),
         )
     }
+}
+
+kotlin {
+    jvmToolchain(25)
 }
 
 java {
