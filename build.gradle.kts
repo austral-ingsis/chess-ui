@@ -65,4 +65,6 @@ publishing {
 }
 dependencies {
     implementation(kotlin("script-runtime"))
+    implementation("io.reactivex.rxjava3:rxjava:3.1.8")
+    implementation("io.reactivex.rxjava3:rxkotlin:3.0.1")
 }

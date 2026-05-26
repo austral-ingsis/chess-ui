@@ -1,7 +1,16 @@
 package edu.austral.dissis.chess.gui
 
+import edu.austral.dissis.chess.gui.GameInputEvent.MoveEvent
+import edu.austral.dissis.chess.gui.GameInputEvent.Redo
+import edu.austral.dissis.chess.gui.GameInputEvent.Undo
+import edu.austral.dissis.chess.gui.GameState.GameOver
+import edu.austral.dissis.chess.gui.GameState.InvalidMove
+import edu.austral.dissis.chess.gui.GameState.Playing
 import edu.austral.dissis.chess.gui.PieceView.Companion.ANIMATION_TIME
 import edu.austral.dissis.chess.gui.util.bindListTo
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.subjects.PublishSubject
+import javafx.application.Platform
 import javafx.animation.RotateTransition
 import javafx.animation.Transition
 import javafx.animation.TranslateTransition
@@ -34,18 +43,15 @@ import javafx.scene.text.Font.font
 import javafx.scene.text.Text
 import javafx.util.Duration
 
-fun interface PieceMovedListener {
-    fun onMovePiece(
-        from: Position,
-        to: Position,
-    )
+internal fun interface PieceMovedListener {
+    fun onMovePiece(from: Position, to: Position)
 }
 
-fun interface PositionClickedHandler {
+internal fun interface PositionClickedHandler {
     fun onClick(position: Position)
 }
 
-class SquareView(
+internal class SquareView(
     private val position: Position,
     private val selectedPosition: ReadOnlyObjectProperty<Position>,
     private val positionClickedHandler: PositionClickedHandler,
@@ -75,11 +81,11 @@ class SquareView(
     }
 }
 
-class PieceView(
+internal class PieceView(
     private val imageResolver: ImageResolver,
     val piece: ObjectProperty<ChessPiece>,
     private val clickedHandler: PositionClickedHandler,
-    private val pieceIsBeingMoved: BooleanProperty
+    private val pieceIsBeingMoved: BooleanProperty,
 ) : Pane() {
     companion object {
         val ANIMATION_TIME: Duration = Duration.millis(500.0)
@@ -133,12 +139,12 @@ class PieceView(
     private fun toY(position: Position) = SquareView.SIZE * (position.row - 1)
 }
 
-class PiecesRenderer(
+internal class PiecesRenderer(
     private val imageResolver: ImageResolver,
     private val pieces: ObservableMap<String, ChessPiece>,
     private val positionClickedHandler: PositionClickedHandler,
     private val pieceIsBeingRemoved: BooleanProperty,
-    private val pieceIsBeingMoved: BooleanProperty
+    private val pieceIsBeingMoved: BooleanProperty,
 ) {
     fun render(): ObservableList<Node> {
         val nodes = observableArrayList<Node>()
@@ -191,13 +197,13 @@ class PiecesRenderer(
     }
 }
 
-class BoardView(
+internal class BoardView(
     private val boardSize: BoardSize,
     private val imageResolver: ImageResolver,
     private val pieceMovedListener: PieceMovedListener,
     private val pieces: ObservableMap<String, ChessPiece>,
     private val pieceIsBeingRemoved: BooleanProperty,
-    private val pieceIsBeingMoved: BooleanProperty
+    private val pieceIsBeingMoved: BooleanProperty,
 ) : Pane() {
     private val selectedPosition = SimpleObjectProperty<Position>()
 
@@ -235,7 +241,7 @@ class BoardView(
         PiecesRenderer(imageResolver, pieces, positionClickedHandler, pieceIsBeingRemoved, pieceIsBeingMoved).render()
 }
 
-class MessageView(text: Text) : HBox() {
+internal class MessageView(text: Text) : HBox() {
     init {
         padding = Insets(20.0, 20.0, 20.0, 20.0)
         alignment = Pos.BASELINE_CENTER
@@ -243,11 +249,15 @@ class MessageView(text: Text) : HBox() {
     }
 }
 
-class GameView(
+internal class GameViewImpl(
     private val imageResolver: ImageResolver,
-) : BorderPane(), GameStateListener {
+) : BorderPane(), GameView {
 
-    // Properties
+    private val inputs = PublishSubject.create<GameInputEvent>()
+
+    override fun inputEvents(): Observable<GameInputEvent> = inputs.startWithItem(GameInputEvent.Init)
+    override fun pane(): Pane = this
+
     private val boardSize = SimpleObjectProperty<BoardSize>()
     private val pieces = observableHashMap<String, ChessPiece>()
     private val currentPlayer = SimpleObjectProperty<PlayerColor>()
@@ -257,14 +267,10 @@ class GameView(
     private val canUndo = SimpleBooleanProperty(false)
     private val canRedo = SimpleBooleanProperty(false)
 
-    // Hacks to prevent inconsistencies (prevents events when animations are running)
     private val pieceIsBeingRemoved: BooleanProperty = SimpleBooleanProperty(false)
     private val pieceIsBeingMoved: BooleanProperty = SimpleBooleanProperty(false)
 
-    private val gameEventListeners = mutableListOf<GameEventListener>()
-
     init {
-        // Styles
         padding = Insets(20.0, 20.0, 20.0, 20.0)
 
         top = renderTopPane()
@@ -275,54 +281,41 @@ class GameView(
         winner.addListener { _, _, newValue -> newValue?.let { center = renderWinner() } }
     }
 
-    fun addListener(eventListener: GameEventListener) = gameEventListeners.add(eventListener)
-
-    override fun handleInitialState(state: InitialState) {
-        setPieces(state.pieces)
-        boardSize.set(state.boardSize)
-        currentPlayer.set(state.currentPlayer)
-    }
-
-    override fun handleMoveResult(result: MoveResult) {
-        when (result) {
-            is NewGameState -> handleNewState(result.pieces, result.currentPlayer, result.undoState)
-            is InvalidMove -> handleInvalidMove(result.reason)
-            is GameOver -> handleGameOver(result.winner)
+    override fun applyState(state: GameState) = onFxThread {
+        when (state) {
+            is Playing -> {
+                boardSize.set(state.boardSize)
+                setPieces(state.pieces)
+                currentPlayer.set(state.currentPlayer)
+                canUndo.set(state.canUndo)
+                canRedo.set(state.canRedo)
+                errorMessage.set(null)
+            }
+            is InvalidMove -> errorMessage.set("Invalid move: ${state.reason}")
+            is GameOver -> winner.set(state.winner)
         }
     }
 
-    private fun handleNewState(
-        pieces: List<ChessPiece>,
-        currentPlayer: PlayerColor,
-        undoState: UndoState
-    ) {
-        setPieces(pieces)
-        setUndoState(undoState)
-        this.currentPlayer.set(currentPlayer)
-        errorMessage.set(null)
+    private fun onFxThread(action: () -> Unit) {
+        if (Platform.isFxApplicationThread()) action() else Platform.runLater(action)
     }
 
-    private fun handleInvalidMove(message: String) = errorMessage.set("Invalid move: $message")
-
-    private fun handleGameOver(winner: PlayerColor) = this.winner.set(winner)
-
     private fun handleMove(from: Position, to: Position) {
-        gameEventListeners.forEach { it.handleMove(Move(from, to)) }
+        inputs.onNext(MoveEvent(Move(from, to)))
     }
 
     private fun handleUndo() {
-        gameEventListeners.forEach { it.handleUndo() }
+        inputs.onNext(Undo)
     }
 
     private fun handleRedo() {
-        gameEventListeners.forEach { it.handleRedo() }
+        inputs.onNext(Redo)
     }
 
     private fun renderPlayerText(): Node {
         val text = Text()
         text.textProperty()
             .bind(createStringBinding({ currentPlayer.value?.run { "Current player: $displayName" } }, currentPlayer))
-
         return text
     }
 
@@ -331,7 +324,6 @@ class GameView(
         text.textProperty()
             .bind(createStringBinding({ "${winner.value.displayName} Won!!" }, winner))
         text.font = font(40.0)
-
         return renderHBoxWithText(text)
     }
 
@@ -350,27 +342,23 @@ class GameView(
     private fun renderLoading(): Node {
         val text = Text("Initializing...")
         text.font = font(40.0)
-
         return renderHBoxWithText(text)
     }
 
-    private fun renderBoard(): Node {
-        return BoardView(
+    private fun renderBoard(): Node =
+        BoardView(
             boardSize.value,
             imageResolver,
             { from, to -> handleMove(from, to) },
             pieces,
             pieceIsBeingRemoved,
-            pieceIsBeingMoved
+            pieceIsBeingMoved,
         )
-
-    }
 
     private fun renderUndoButton(): Node {
         val undoButton = Button("Undo")
         undoButton.disableProperty().bind(pieceIsBeingRemoved.or(pieceIsBeingMoved).or(canUndo.not()))
         undoButton.onMouseClicked = EventHandler { handleUndo() }
-
         return undoButton
     }
 
@@ -378,22 +366,15 @@ class GameView(
         val redoButton = Button("Redo")
         redoButton.disableProperty().bind(pieceIsBeingRemoved.or(pieceIsBeingMoved).or(canRedo.not()))
         redoButton.onMouseClicked = EventHandler { handleRedo() }
-
         return redoButton
     }
 
     private fun renderTopPane(): Node {
-        val undoButton = renderUndoButton()
-        val redoButton = renderRedoButton()
-        val playerText = renderPlayerText()
-
         val topPane = BorderPane()
-        topPane.left = HBox(undoButton, redoButton)
-        topPane.center = playerText
-
+        topPane.left = HBox(renderUndoButton(), renderRedoButton())
+        topPane.center = renderPlayerText()
         topPane.prefWidthProperty().bind(this.prefWidthProperty())
         topPane.padding = Insets(10.0, 10.0, 10.0, 10.0)
-
         return topPane
     }
 
@@ -404,13 +385,6 @@ class GameView(
         this.pieces.putAll((newPieces + updatedPieces).associateBy { it.id })
 
         val removedPieces = this.pieces.filter { pieces.find { entry -> entry.id == it.key } == null }
-        removedPieces.forEach {
-            this.pieces.remove(it.key)
-        }
-    }
-
-    private fun setUndoState(undoState: UndoState) {
-        canUndo.set(undoState.canUndo)
-        canRedo.set(undoState.canRedo)
+        removedPieces.forEach { this.pieces.remove(it.key) }
     }
 }

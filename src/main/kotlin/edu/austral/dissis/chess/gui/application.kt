@@ -4,9 +4,10 @@ import javafx.application.Application
 import javafx.scene.Scene
 import javafx.stage.Stage
 
-abstract class AbstractChessGameApplication : Application() {
-    protected abstract val gameEngine: GameEngine
+internal abstract class AbstractChessGameApplication : Application() {
     protected abstract val imageResolver: ImageResolver
+
+    protected abstract fun buildEngine(view: GameView)
 
     companion object {
         const val GameTitle = "Chess"
@@ -14,10 +15,9 @@ abstract class AbstractChessGameApplication : Application() {
 
     override fun start(primaryStage: Stage) {
         primaryStage.title = GameTitle
-
-        val root = createGameViewFrom(gameEngine, imageResolver)
-        primaryStage.scene = Scene(root)
-
+        val view = GameViewFactory.create(imageResolver)
+        buildEngine(view)
+        primaryStage.scene = Scene(view.pane())
         primaryStage.show()
     }
 }
